@@ -1,0 +1,132 @@
+name: 'test-cache'
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test-setup-cache:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, macos-14]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup with cache
+        uses: ./
+        with:
+          enable-cache: true
+          working-directory: __tests__/fixtures/rye-project
+          cache-prefix: ${{ github.run_id }}-${{ github.run_attempt }}
+      - run: rye sync
+        working-directory: __tests__/fixtures/rye-project
+  test-restore-cache:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, macos-14]
+    needs: test-setup-cache
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore with cache
+        id: restore
+        uses: ./
+        with:
+            enable-cache: true
+            working-directory: __tests__/fixtures/rye-project
+            cache-prefix: ${{ github.run_id }}-${{ github.run_attempt }}
+      - name: Cache was hit
+        run: |
+          if [ "$CACHE_HIT" != "true" ]; then
+            exit 1
+          fi
+        env:
+          CACHE_HIT: ${{ steps.restore.outputs.cache-hit }}
+      - run: rye sync
+        working-directory: __tests__/fixtures/rye-project
+
+  test-setup-cache-local:
+    runs-on: oracle-aarch64
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup with cache
+        uses: ./
+        with:
+          enable-cache: true
+          working-directory: __tests__/fixtures/rye-project
+          cache-prefix: ${{ github.run_id }}-${{ github.run_attempt }}
+          cache-local-storage-path: /tmp/rye-cache
+      - run: rye sync
+        working-directory: __tests__/fixtures/rye-project
+  test-restore-cache-local:
+    runs-on: oracle-aarch64
+    needs: test-setup-cache-local
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore with cache
+        id: restore
+        uses: ./
+        with:
+            enable-cache: true
+            working-directory: __tests__/fixtures/rye-project
+            cache-prefix: ${{ github.run_id }}-${{ github.run_attempt }}
+            cache-local-storage-path: /tmp/rye-cache
+      - name: Cache was hit
+        run: |
+          if [ "$CACHE_HIT" != "true" ]; then
+            exit 1
+          fi
+        env:
+          CACHE_HIT: ${{ steps.restore.outputs.cache-hit }}
+      - run: rye sync
+        working-directory: __tests__/fixtures/rye-project
+
+  test-setup-cache-local-venv-path-mismatch:
+    runs-on: oracle-aarch64
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup with cache
+        uses: ./
+        with:
+          enable-cache: true
+          working-directory: __tests__/fixtures/rye-project
+          cache-prefix: ${{ github.run_id }}-${{ github.run_attempt }}-path-mismatch
+          cache-local-storage-path: /tmp/rye-cache
+      - run: rye sync
+        working-directory: __tests__/fixtures/rye-project
+  alter-venv-path-in-cache-local:
+    runs-on: oracle-aarch64
+    needs: test-setup-cache-local
+    steps:
+      - uses: actions/checkout@v4
+      - name: Alter venv path in cache
+        run: |
+          RYE_VENV_PATH=$(find /tmp/rye-cache -type f -name 'rye-venv.json' -path '/tmp/rye-cache/${{ github.run_id }}-${{ github.run_attempt }}-path-mismatch*')
+          sed -i 's/"venv_path":\s*"[^"]*"/"venv_path": "something"/' "$RYE_VENV_PATH"
+  test-restore-cache-local-venv-path-mismatch:
+    runs-on: oracle-aarch64
+    needs: alter-venv-path-in-cache-local
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore with cache
+        id: restore
+        uses: ./
+        with:
+            enable-cache: true
+            working-directory: __tests__/fixtures/rye-project
+            cache-prefix: ${{ github.run_id }}-${{ github.run_attempt }}-path-mismatch
+            cache-local-storage-path: /tmp/rye-cache
+      - name: Cache was not hit
+        run: |
+          if [ "$CACHE_HIT" == "true" ]; then
+            exit 1
+          fi
+        env:
+          CACHE_HIT: ${{ steps.restore.outputs.cache-hit }}
+      - run: rye sync
+        working-directory: __tests__/fixtures/rye-project

@@ -4,10 +4,35 @@ author: 'eifinger'
 inputs:
   version: 
     description: 'The version of rye to install'
-    default: 'latest'
+    default: '0.44.0'
+  checksum:
+    description: 'The checksum of the rye version to install'
+    required: false
+  github-token:
+    description: 'Used to increase the rate limit when retrieving versions and downloading rye.'
+    required: false
+  enable-cache:
+    description: 'Enable caching of .venv'
+    default: 'false'
+  working-directory:
+    description: 'The location of the rye project relative to the root of the repository'
+    required: false
+  cache-prefix:
+    description: 'Prefix for the cache key'
+    required: false
+  cache-local-storage-path:
+    description: 'Local path to store the cache. Will be used instead of the GitHub Actions cache'
+    required: false
+outputs:
+  rye-version:
+    description: "The installed rye version. Useful when using latest."
+  cache-hit:
+    description: "A boolean value to indicate a cache entry was found"
 runs:
-  using: 'node16'
+  using: 'node20'
   main: 'dist/setup/index.js'
+  post: 'dist/save-cache/index.js'
+  post-if: success()
 branding:
   icon: 'package'
   color: 'blue'

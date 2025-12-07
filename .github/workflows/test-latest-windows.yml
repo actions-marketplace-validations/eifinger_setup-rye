@@ -1,0 +1,49 @@
+name: 'test-latest-windows'
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test-latest:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Should not be on path
+        run: |
+          if (!(Get-Command -Name "rye" -ErrorAction SilentlyContinue)) {
+            exit 0
+          } else {
+            exit 1
+          }
+      - name: Setup rye
+        uses: ./
+        with:
+          version: latest
+          working-directory: __tests__\fixtures\rye-project
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - run: rye sync
+        working-directory: __tests__\fixtures\rye-project
+      - name: Rye path is not added to .profile
+        run: |
+            $env:Path -split ';' | ForEach-Object {
+              if ($_ -eq "C:\path\to\rye") {
+                exit 1
+              }
+            }
+            exit 0
+  test-latest-without-github-token:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup rye
+        uses: ./
+        with:
+          version: latest
+      - run: rye sync
+        working-directory: __tests__\fixtures\rye-project

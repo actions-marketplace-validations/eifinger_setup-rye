@@ -1,35 +1,92 @@
-name: 'build-test'
-on: # rebuild any PRs and main branch changes
+name: 'test'
+on:
   pull_request:
   push:
     branches:
       - main
-      - 'releases/*'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  build: # make sure build/ci work properly
-    runs-on: ubuntu-latest
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, macos-14, oracle-aarch64]
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
       - run: |
           npm install
       - run: |
           npm run all
-  test: # make sure the action works on a clean machine without building
-    runs-on: ubuntu-latest
+  test-default-version:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, oracle-aarch64]
     steps:
-      - uses: actions/checkout@v3
-      - name: Should not be on path
-        run: |
-          which rye
-        continue-on-error: true
-      - name: Install latest
-        uses: ./
-      - run: |
-          which rye
-      - name: Install specific version
+      - uses: actions/checkout@v4
+      - name: Install default version
         uses: ./
         with:
-          version: '0.9.0'
+          github-token: ${{ secrets.GITHUB_TOKEN }}
       - run: |
           which rye
+  test-specific-version:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, oracle-aarch64]
+        rye-version: ['0.3.0','0.4.0']
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install version ${{ matrix.rye-version }}
+        uses: ./
+        with:
+          version: ${{ matrix.rye-version }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - run: |
+          which rye
+  test-checksum:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, oracle-aarch64]
+        checksum: ['00e795573477a2fe2b3c0ac748240364c3369218d314d1df47d2653764e9bfb1']
+        exclude:
+          - os: oracle-aarch64
+            checksum: '00e795573477a2fe2b3c0ac748240364c3369218d314d1df47d2653764e9bfb1'
+        include:
+          - os: oracle-aarch64
+            checksum: '7e0b1f6e3490a79c1d2600e8c04dd9ed4ea04d29d6c80f1f5a84a79736e9a21d'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Checksum matches expected
+        uses: ./
+        with:
+          version: '0.11.0'
+          checksum: ${{ matrix.checksum }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+  test-modify-path-warning:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install version which modifies path
+        uses: ./
+        with:
+          version: '0.21.0'
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - run: which rye
+      - name: Rye path is added to .profile
+        run: |
+          if grep -q "rye" ~/.profile;
+          then
+            exit 0
+          else
+            exit 1
+          fi
